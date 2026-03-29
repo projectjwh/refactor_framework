@@ -1,0 +1,173 @@
+source_language: SAS
+target_language: Python
+
+mappings:
+  # ── 00_config.sas ──────────────────────────────────────────────────
+  - source_file: "00_config.sas"
+    source_construct: "GLOBAL_MACRO_VARS"
+    target_file: "config.py"
+    target_construct: "EnrollmentConfig"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      %LET macro variables (%PROJ_ROOT, %START_YEAR, %END_YEAR, %BATCH_SIZE,
+      %VALID_BUYIN, etc.) and LIBNAME statements replaced by a Python dataclass
+      with typed fields, Path objects, and set-based valid code lookups.
+    source_lines: [1, 74]
+    target_lines: [1, 63]
+
+  # ── 01_enroll_driver.sas ───────────────────────────────────────────
+  - source_file: "01_enroll_driver.sas"
+    source_construct: "RUN_ALL_BATCHES"
+    target_file: "enroll_driver.py"
+    target_construct: "run_all_partitions"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      %DO %WHILE batch loop with SYSTASK COMMAND + WAITFOR _ALL_ replaced by
+      concurrent.futures.ProcessPoolExecutor with as_completed(). Generated
+      child .sas files eliminated — direct function calls instead.
+    source_lines: [70, 229]
+    target_lines: [36, 82]
+
+  - source_file: "01_enroll_driver.sas"
+    source_construct: "CHILD_SAS_GENERATION"
+    target_file: "enroll_driver.py"
+    target_construct: "run_all_partitions"
+    mapping_type: "removed"
+    status: "COMPLETE"
+    description: >
+      DATA _NULL_; FILE/PUT pattern generating temporary .sas child scripts
+      is eliminated entirely. Python ProcessPoolExecutor calls process_partition()
+      directly — no code generation needed.
+    source_lines: [114, 142]
+
+  - source_file: "01_enroll_driver.sas"
+    source_construct: "RETRY_LOGIC"
+    target_file: "enroll_driver.py"
+    target_construct: "run_all_partitions (retry block)"
+    mapping_type: "1:1"
+    status: "COMPLETE"
+    description: >
+      Nested %DO loop retrying failed mods sequentially (up to MAX_RETRIES)
+      preserved as a sequential for-loop fallback after parallel execution.
+    source_lines: [172, 210]
+    target_lines: [68, 82]
+
+  - source_file: "01_enroll_driver.sas"
+    source_construct: "POST_BATCH_QA"
+    target_file: "enroll_driver.py"
+    target_construct: "run_qa_checks"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      PROC SQL inline QA checks (duplicate BENE_ID x YEAR, BUYIN string length,
+      MONTHS_ENROLLED bounds) replaced by Polars filter() + group_by() operations
+      in a dedicated function.
+    source_lines: [217, 266]
+    target_lines: [90, 138]
+
+  - source_file: "01_enroll_driver.sas"
+    source_construct: "CROSS_PARTITION_CHECK"
+    target_file: "enroll_driver.py"
+    target_construct: "run_qa_checks (cross-partition block)"
+    mapping_type: "refactored"
+    status: "PARTIAL"
+    description: >
+      PROC SQL CREATE VIEW stacking 100 datasets via UNION ALL + GROUP BY HAVING
+      replaced by Polars pl.concat() + group_by().agg(n_unique()). Behavioral
+      equivalence not yet validated on full 100-mod dataset.
+    source_lines: [273, 313]
+    target_lines: [121, 138]
+
+  - source_file: "01_enroll_driver.sas"
+    source_construct: "BATCH_TRACKER_DATASET"
+    target_file: "enroll_driver.py"
+    target_construct: "results list[dict]"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      SAS work.batch_tracker dataset (DATA step + PROC SQL INSERT) replaced by
+      a Python list of dicts accumulated per-partition. PROC FREQ/MEANS summary
+      replaced by _print_summary() function.
+    source_lines: [46, 62]
+    target_lines: [84, 88]
+
+  # ── 02_enroll_process.sas ──────────────────────────────────────────
+  - source_file: "02_enroll_process.sas"
+    source_construct: "PROC_IMPORT_CSV"
+    target_file: "enroll_process.py"
+    target_construct: "process_partition (step 1)"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      PROC IMPORT DBMS=CSV with GUESSINGROWS + DATA step type coercion (LENGTH,
+      UPCASE, STRIP, INPUT for year/month) replaced by pl.read_csv() with
+      schema_overrides + str.strip_chars().str.to_uppercase() chain.
+    source_lines: [39, 97]
+    target_lines: [64, 87]
+
+  - source_file: "02_enroll_process.sas"
+    source_construct: "DEDUP_SORT"
+    target_file: "enroll_process.py"
+    target_construct: "process_partition (step 2)"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      PROC SORT NODUPKEY with DUPOUT= for logging replaced by
+      df.unique(subset=[...], keep='last') + len delta for warning log.
+    source_lines: [99, 109]
+    target_lines: [89, 94]
+
+  - source_file: "02_enroll_process.sas"
+    source_construct: "CME_VALIDATION"
+    target_file: "enroll_process.py"
+    target_construct: "_validate_codes"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      DATA step with 4 nested IF/THEN blocks validating BUYIN, HMO, DUAL, ESRD
+      codes against hard-coded valid value lists (with dead _INVALID_FLAG code)
+      replaced by chained pl.when().then().otherwise() using config.valid_* sets.
+    source_lines: [111, 148]
+    target_lines: [120, 139]
+
+  - source_file: "02_enroll_process.sas"
+    source_construct: "SKELETON_FILL"
+    target_file: "enroll_process.py"
+    target_construct: "_fill_missing_months"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      3-step pattern (PROC SQL distinct bene-years -> DATA step DO MONTH=1 TO 12
+      -> PROC SQL LEFT JOIN with 14 COALESCE columns) replaced by single Polars
+      chain: unique() -> cross-join range(1,13) -> join(how='left') -> fill_null().
+    source_lines: [150, 194]
+    target_lines: [142, 158]
+
+  - source_file: "02_enroll_process.sas"
+    source_construct: "ANNUAL_CONCATENATION"
+    target_file: "enroll_process.py"
+    target_construct: "_build_annual_strings"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      DATA step with RETAIN + SUBSTR positioning + 24-line IF/ELSE for Part C/D
+      contracts + FIRST.YEAR reset + LAST.YEAR output replaced by single
+      group_by().agg() with sort_by + str.concat for indicator strings and
+      list comprehension .get(i) for per-month contract columns.
+    source_lines: [196, 257]
+    target_lines: [161, 224]
+
+  - source_file: "02_enroll_process.sas"
+    source_construct: "FINAL_OUTPUT"
+    target_file: "enroll_process.py"
+    target_construct: "process_partition (step 6)"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      PROC SORT + DATA step with LABEL statement writing to permanent SAS library
+      (COMPRESS=YES) replaced by annual.write_parquet(). Column labels preserved
+      as Parquet metadata via Polars schema.
+    source_lines: [259, 280]
+    target_lines: [102, 106]

@@ -1,0 +1,173 @@
+{% extends "_base.html" %}
+
+{% block title %}Increment {{ record.increment_id }} Report{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Increment Report: {{ record.increment_id }}</h1>
+    <p class="subtitle">{{ record.plan.description }}</p>
+    <span class="badge badge-{{ record.status }}">{{ record.status }}</span>
+    {% if record.plan.created_at %}
+    <span class="subtitle" style="margin-left: 1rem;">{{ record.plan.created_at[:19] }}</span>
+    {% endif %}
+</div>
+
+<!-- Summary Cards -->
+<h2>Summary</h2>
+<div class="cards">
+    <div class="card">
+        <div class="value">{{ files_changed }}</div>
+        <div class="label">Files Changed</div>
+    </div>
+    <div class="card {% if record.efficiency.loc_delta < 0 %}positive{% elif record.efficiency.loc_delta > 0 %}negative{% endif %}">
+        <div class="value">{{ "%+d"|format(record.efficiency.loc_delta) }}</div>
+        <div class="label">LOC Delta</div>
+    </div>
+    <div class="card {% if record.efficiency.complexity_delta < 0 %}positive{% elif record.efficiency.complexity_delta > 0 %}negative{% endif %}">
+        <div class="value">{{ "%+.2f"|format(record.efficiency.complexity_delta) }}</div>
+        <div class="label">Complexity Delta</div>
+    </div>
+    <div class="card {% if record.efficiency.maintainability_delta > 0 %}positive{% elif record.efficiency.maintainability_delta < 0 %}negative{% endif %}">
+        <div class="value">{{ "%+.2f"|format(record.efficiency.maintainability_delta) }}</div>
+        <div class="label">Maintainability Delta</div>
+    </div>
+</div>
+
+<!-- Token & Time -->
+<h2>Token &amp; Time</h2>
+<table>
+    <tr><th>Metric</th><th class="num">Value</th></tr>
+    <tr><td>Input Tokens</td><td class="num">{{ "{:,}".format(record.token_usage.input_tokens) }}</td></tr>
+    <tr><td>Output Tokens</td><td class="num">{{ "{:,}".format(record.token_usage.output_tokens) }}</td></tr>
+    <tr><td>Total Tokens</td><td class="num">{{ "{:,}".format(record.token_usage.total_tokens) }}</td></tr>
+    <tr><td>Model</td><td class="num">{{ record.token_usage.model }}</td></tr>
+    <tr><td>Cost Estimate (USD)</td><td class="num">${{ "%.4f"|format(record.token_usage.cost_estimate_usd) }}</td></tr>
+    <tr><td>Duration</td><td class="num">{{ "%.1f"|format(record.time_record.duration_seconds) }}s</td></tr>
+    <tr><td>Start</td><td class="num">{{ record.time_record.start_time[:19] if record.time_record.start_time else "—" }}</td></tr>
+    <tr><td>End</td><td class="num">{{ record.time_record.end_time[:19] if record.time_record.end_time else "—" }}</td></tr>
+    {% if record.efficiency.lines_changed_per_token > 0 %}
+    <tr><td>Lines Changed / Token</td><td class="num">{{ "%.4f"|format(record.efficiency.lines_changed_per_token) }}</td></tr>
+    {% endif %}
+    {% if record.efficiency.complexity_delta_per_hour != 0 %}
+    <tr><td>Complexity Delta / Hour</td><td class="num">{{ "%.2f"|format(record.efficiency.complexity_delta_per_hour) }}</td></tr>
+    {% endif %}
+</table>
+
+<!-- File Metrics Comparison -->
+<h2>File Metrics Comparison</h2>
+<table>
+    <thead>
+        <tr>
+            <th>File</th>
+            <th class="num">LOC Before</th>
+            <th class="num">LOC After</th>
+            <th class="num">LOC &Delta;</th>
+            <th class="num">CC Before</th>
+            <th class="num">CC After</th>
+            <th class="num">CC &Delta;</th>
+            <th class="num">MI Before</th>
+            <th class="num">MI After</th>
+            <th class="num">MI &Delta;</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for fc in file_comparisons %}
+        <tr>
+            <td>{{ fc.file_path }}</td>
+            <td class="num">{{ fc.loc_before }}</td>
+            <td class="num">{{ fc.loc_after }}</td>
+            <td class="num {% if fc.loc_delta < 0 %}delta-pos{% elif fc.loc_delta > 0 %}delta-neg{% else %}delta-zero{% endif %}">{{ "%+d"|format(fc.loc_delta) }}</td>
+            <td class="num">{{ fc.cc_before }}</td>
+            <td class="num">{{ fc.cc_after }}</td>
+            <td class="num {% if fc.cc_delta < 0 %}delta-pos{% elif fc.cc_delta > 0 %}delta-neg{% else %}delta-zero{% endif %}">{{ "%+.2f"|format(fc.cc_delta) }}</td>
+            <td class="num">{{ fc.mi_before }}</td>
+            <td class="num">{{ fc.mi_after }}</td>
+            <td class="num {% if fc.mi_delta > 0 %}delta-pos{% elif fc.mi_delta < 0 %}delta-neg{% else %}delta-zero{% endif %}">{{ "%+.2f"|format(fc.mi_delta) }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<!-- Test Results -->
+{% if record.test_before or record.test_after %}
+<h2>Test Results</h2>
+<table>
+    <thead>
+        <tr><th>Metric</th><th class="num">Before</th><th class="num">After</th><th class="num">&Delta;</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Passed</td>
+            <td class="num">{{ record.test_before.passed if record.test_before else "—" }}</td>
+            <td class="num">{{ record.test_after.passed if record.test_after else "—" }}</td>
+            <td class="num">
+                {% if record.test_before and record.test_after %}
+                    {{ "%+d"|format(record.test_after.passed - record.test_before.passed) }}
+                {% else %}—{% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td>Failed</td>
+            <td class="num">{{ record.test_before.failed if record.test_before else "—" }}</td>
+            <td class="num">{{ record.test_after.failed if record.test_after else "—" }}</td>
+            <td class="num">
+                {% if record.test_before and record.test_after %}
+                    {{ "%+d"|format(record.test_after.failed - record.test_before.failed) }}
+                {% else %}—{% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td>Errors</td>
+            <td class="num">{{ record.test_before.errors if record.test_before else "—" }}</td>
+            <td class="num">{{ record.test_after.errors if record.test_after else "—" }}</td>
+            <td class="num">
+                {% if record.test_before and record.test_after %}
+                    {{ "%+d"|format(record.test_after.errors - record.test_before.errors) }}
+                {% else %}—{% endif %}
+            </td>
+        </tr>
+    </tbody>
+</table>
+{% endif %}
+
+<!-- File Diffs -->
+<h2>File Diffs</h2>
+{% for diff in diffs %}
+    {% if diff.changed %}
+    <details class="collapsible">
+        <summary>{{ diff.rel_path }} (+{{ diff.added }} / -{{ diff.removed }})</summary>
+        <div class="content">
+            {{ diff.html_diff }}
+        </div>
+    </details>
+    {% endif %}
+{% endfor %}
+
+{% if not diffs or not diffs|selectattr("changed")|list %}
+<p style="color: #94a3b8;">No file changes detected.</p>
+{% endif %}
+
+<!-- Plan Details -->
+<details class="collapsible">
+    <summary>Plan Details</summary>
+    <div class="content">
+        <p><strong>Description:</strong> {{ record.plan.description }}</p>
+        {% if record.plan.target_files %}
+        <p><strong>Target Files:</strong></p>
+        <ul>
+            {% for f in record.plan.target_files %}
+            <li>{{ f }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% if record.plan.acceptance_criteria %}
+        <p><strong>Acceptance Criteria:</strong></p>
+        <ul>
+            {% for c in record.plan.acceptance_criteria %}
+            <li>{{ c }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+</details>
+{% endblock %}

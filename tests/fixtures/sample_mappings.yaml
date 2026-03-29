@@ -1,0 +1,67 @@
+source_language: SAS
+target_language: Python
+
+mappings:
+  - source_file: "02_enroll_process.sas"
+    source_construct: "PROCESS_ENROLLMENT"
+    target_file: "enroll_process.py"
+    target_construct: "process_partition"
+    mapping_type: "1:1"
+    status: "COMPLETE"
+    description: >
+      SAS macro replaced by Python function. PROC IMPORT replaced by
+      Polars read_csv. SYSTASK parallelism replaced by multiprocessing.
+    source_lines: [35, 449]
+    target_lines: [52, 117]
+
+  - source_file: "02_enroll_process.sas"
+    source_construct: "STEP_3_VALIDATE"
+    target_file: "enroll_process.py"
+    target_construct: "_validate_codes"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      SAS DATA step with nested IF/THEN validation replaced by Polars
+      when/then/otherwise expressions in single pass.
+    source_lines: [156, 191]
+    target_lines: [120, 139]
+
+  - source_file: "02_enroll_process.sas"
+    source_construct: "STEP_5_CONCATENATE"
+    target_file: "enroll_process.py"
+    target_construct: "_build_annual_strings"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      RETAIN + SUBSTR + 24-line IF/ELSE replaced by single Polars
+      group_by().agg(str.concat).
+
+  - source_file: "00_config.sas"
+    source_construct: "GLOBAL_MACROS"
+    target_file: "config.py"
+    target_construct: "EnrollmentConfig"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      SAS %LET macro variables and LIBNAME statements replaced by
+      Python dataclass with typed fields and Path objects.
+
+  - source_file: "01_enroll_driver.sas"
+    source_construct: "RUN_ALL_BATCHES"
+    target_file: "enroll_driver.py"
+    target_construct: "run_all_partitions"
+    mapping_type: "refactored"
+    status: "COMPLETE"
+    description: >
+      SAS SYSTASK + WAITFOR batch loop replaced by Python
+      ProcessPoolExecutor with as_completed.
+
+  - source_file: "01_enroll_driver.sas"
+    source_construct: "CROSS_PARTITION_CHECK"
+    target_file: "enroll_driver.py"
+    target_construct: "run_qa_checks"
+    mapping_type: "1:1"
+    status: "PARTIAL"
+    description: >
+      SAS PROC SQL UNION ALL view + GROUP BY replaced by Polars
+      concat + group_by. Behavioral equivalence not yet validated.

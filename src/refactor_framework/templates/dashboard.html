@@ -1,0 +1,127 @@
+{% extends "_base.html" %}
+
+{% block title %}Refactoring Dashboard{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Refactoring Dashboard</h1>
+    <p class="subtitle">{{ summary.total_increments }} increments tracked</p>
+</div>
+
+<!-- Cumulative Summary -->
+<h2>Cumulative Summary</h2>
+<div class="cards">
+    <div class="card">
+        <div class="value">{{ summary.total_increments }}</div>
+        <div class="label">Total Increments</div>
+    </div>
+    <div class="card">
+        <div class="value">{{ summary.total_files_changed }}</div>
+        <div class="label">Total Files</div>
+    </div>
+    <div class="card {% if summary.total_loc_delta < 0 %}positive{% elif summary.total_loc_delta > 0 %}negative{% endif %}">
+        <div class="value">{{ "%+d"|format(summary.total_loc_delta) }}</div>
+        <div class="label">Total LOC Delta</div>
+    </div>
+    <div class="card {% if summary.total_cc_delta < 0 %}positive{% elif summary.total_cc_delta > 0 %}negative{% endif %}">
+        <div class="value">{{ "%+.2f"|format(summary.total_cc_delta) }}</div>
+        <div class="label">Total CC Delta</div>
+    </div>
+    <div class="card">
+        <div class="value">{{ "{:,}".format(summary.total_tokens) }}</div>
+        <div class="label">Total Tokens</div>
+    </div>
+    <div class="card">
+        <div class="value">${{ "%.2f"|format(summary.total_cost) }}</div>
+        <div class="label">Total Cost</div>
+    </div>
+</div>
+
+<!-- Efficiency Metrics -->
+<h2>Efficiency Metrics</h2>
+<div class="cards">
+    <div class="card">
+        <div class="value">{{ efficiency.lines_per_1k_tokens }}</div>
+        <div class="label">Lines Changed / 1K Tokens</div>
+    </div>
+    <div class="card">
+        <div class="value">{{ efficiency.cc_per_hour }}</div>
+        <div class="label">CC Reduced / Hour</div>
+    </div>
+    <div class="card">
+        <div class="value">${{ "%.4f"|format(efficiency.avg_cost_per_increment) }}</div>
+        <div class="label">Avg Cost / Increment</div>
+    </div>
+    <div class="card">
+        <div class="value">{{ "%.1f"|format(summary.total_time_hours) }}h</div>
+        <div class="label">Total Time</div>
+    </div>
+</div>
+
+<!-- Token Usage Chart -->
+{% if increments %}
+<h2>Token Usage by Increment</h2>
+<div class="bar-chart">
+    {% set max_tokens = increments|map(attribute='tokens')|max if increments else 1 %}
+    {% for inc in increments %}
+    <div class="bar-row">
+        <div class="bar-label" title="{{ inc.increment_id }}">{{ inc.increment_id[:8] }}</div>
+        <div class="bar-track">
+            <div class="bar-fill blue" style="width: {{ (inc.tokens / max_tokens * 100) if max_tokens > 0 else 0 }}%"></div>
+        </div>
+        <div class="bar-value">{{ "{:,}".format(inc.tokens) }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- LOC Delta Chart -->
+<h2>LOC Delta by Increment</h2>
+<div class="bar-chart">
+    {% set max_loc = increments|map(attribute='loc_delta')|map('abs')|max if increments else 1 %}
+    {% for inc in increments %}
+    <div class="bar-row">
+        <div class="bar-label" title="{{ inc.increment_id }}">{{ inc.increment_id[:8] }}</div>
+        <div class="bar-track">
+            <div class="bar-fill {% if inc.loc_delta <= 0 %}green{% else %}red{% endif %}" style="width: {{ (inc.loc_delta|abs / max_loc * 100) if max_loc > 0 else 0 }}%"></div>
+        </div>
+        <div class="bar-value">{{ "%+d"|format(inc.loc_delta) }}</div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Increment History -->
+<h2>Increment History</h2>
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Date</th>
+            <th>Description</th>
+            <th>Status</th>
+            <th class="num">Files</th>
+            <th class="num">LOC &Delta;</th>
+            <th class="num">CC &Delta;</th>
+            <th class="num">Tokens</th>
+            <th class="num">Cost</th>
+            <th class="num">Hours</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for inc in increments %}
+        <tr>
+            <td><a href="../increments/{{ inc.increment_id }}/report.html">{{ inc.increment_id }}</a></td>
+            <td>{{ inc.date }}</td>
+            <td>{{ inc.description[:50] }}{% if inc.description|length > 50 %}...{% endif %}</td>
+            <td><span class="badge badge-{{ inc.status }}">{{ inc.status }}</span></td>
+            <td class="num">{{ inc.files }}</td>
+            <td class="num {% if inc.loc_delta < 0 %}delta-pos{% elif inc.loc_delta > 0 %}delta-neg{% else %}delta-zero{% endif %}">{{ "%+d"|format(inc.loc_delta) }}</td>
+            <td class="num {% if inc.cc_delta < 0 %}delta-pos{% elif inc.cc_delta > 0 %}delta-neg{% else %}delta-zero{% endif %}">{{ "%+.2f"|format(inc.cc_delta) }}</td>
+            <td class="num">{{ "{:,}".format(inc.tokens) }}</td>
+            <td class="num">${{ "%.4f"|format(inc.cost) }}</td>
+            <td class="num">{{ inc.duration_hours }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

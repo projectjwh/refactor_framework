@@ -1,0 +1,34 @@
+project:
+  name: test
+  target_repo: C:\Users\jwhyu\Desktop\claude_projects\refactor_framework\legacy_sas_codebase\programs
+  output_dir: output
+  increments_dir: increments
+  devlogs_dir: devlogs
+snapshot:
+  include_patterns:
+  - '*.sas'
+  - '*.py'
+  exclude_patterns:
+  - __pycache__
+  - .git
+  - '*.pyc'
+  - node_modules
+  - .venv
+  - venv
+  metrics_backend: lizard
+execute:
+  default_model: claude-sonnet-4-20250514
+  cost_per_input_token: 3.0e-06
+  cost_per_output_token: 1.5e-05
+test:
+  default_command: pytest tests/ -v
+  working_directory: null
+  timeout_seconds: 300
+report:
+  template_dir: null
+  diff_style: side-by-side
+  max_diff_lines: 500
+  include_source_in_report: true
+archive:
+  ledger_backend: json
+  ledger_path: output/ledger.json

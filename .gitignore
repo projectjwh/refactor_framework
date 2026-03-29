@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+*.egg
+.venv/
+venv/
+
+# Runtime artifacts
+increments/
+output/

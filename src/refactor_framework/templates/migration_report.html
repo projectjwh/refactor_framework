@@ -1,0 +1,215 @@
+{% extends "_base.html" %}
+
+{% block title %}Migration Report: {{ record.increment_id }}{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Migration Report: {{ record.increment_id }}</h1>
+    <p class="subtitle">{{ record.plan.description }}</p>
+    <span class="badge badge-{{ record.status }}">{{ record.status }}</span>
+</div>
+
+<!-- Migration Overview -->
+<h2>Migration Overview</h2>
+<div class="cards">
+    <div class="card">
+        <div class="value">{{ overview.source_language }} &rarr; {{ overview.target_language }}</div>
+        <div class="label">Language Migration</div>
+    </div>
+    <div class="card">
+        <div class="value">{{ overview.source_file_count }} &rarr; {{ overview.target_file_count }}</div>
+        <div class="label">Files (Source &rarr; Target)</div>
+    </div>
+    <div class="card">
+        <div class="value">{{ overview.source_total_loc }} &rarr; {{ overview.target_total_loc }}</div>
+        <div class="label">LOC (Source &rarr; Target)</div>
+    </div>
+    <div class="card {% if coverage.pct_complete == 100 %}positive{% elif coverage.pct_complete < 50 %}negative{% endif %}">
+        <div class="value">{{ coverage.pct_complete }}%</div>
+        <div class="label">Migration Coverage</div>
+    </div>
+</div>
+
+<!-- File Mapping Legend -->
+<h2>File Mapping</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Source File ({{ overview.source_language }})</th>
+            <th class="num">LOC</th>
+            <th style="text-align:center">&rarr;</th>
+            <th>Target File(s) ({{ overview.target_language }})</th>
+            <th class="num">LOC</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for fm in file_mapping %}
+        <tr>
+            <td>{{ fm.source_file }}</td>
+            <td class="num">{{ fm.source_loc }}</td>
+            <td style="text-align:center">&rarr;</td>
+            <td>
+                {% for tf in fm.target_files %}
+                    {{ tf }}{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            </td>
+            <td class="num">{{ fm.target_total_loc }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<!-- Construct Mapping Table (Traceability Matrix) -->
+<h2>Construct Traceability Matrix</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Source Construct</th>
+            <th>Target Construct</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in construct_table %}
+        <tr>
+            <td><strong>{{ row.source_file }}</strong><br><code>{{ row.source_construct }}</code></td>
+            <td><strong>{{ row.target_file }}</strong><br><code>{{ row.target_construct }}</code></td>
+            <td><span class="badge" style="background:#e2e8f0;color:#475569">{{ row.mapping_type }}</span></td>
+            <td>
+                <span class="badge
+                    {% if row.status == 'COMPLETE' %}badge-reported
+                    {% elif row.status == 'PARTIAL' %}badge-executing
+                    {% elif row.status == 'TODO' %}badge-planned
+                    {% elif row.status == 'REMOVED' %}badge-archived
+                    {% endif %}">{{ row.status }}</span>
+            </td>
+            <td>{{ row.description }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<!-- Coverage Summary -->
+<h2>Coverage Summary</h2>
+<div class="coverage-bar-container" style="background:#e2e8f0;border-radius:8px;height:28px;margin:1rem 0;overflow:hidden">
+    <div style="background:linear-gradient(90deg,#22c55e,#4ade80);height:100%;width:{{ coverage.pct_complete }}%;border-radius:8px;display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:0.85rem">
+        {% if coverage.pct_complete > 10 %}{{ coverage.pct_complete }}%{% endif %}
+    </div>
+</div>
+<div class="cards">
+    <div class="card">
+        <div class="value">{{ coverage.total }}</div>
+        <div class="label">Total Constructs</div>
+    </div>
+    <div class="card positive">
+        <div class="value">{{ coverage.complete }}</div>
+        <div class="label">Complete</div>
+    </div>
+    <div class="card" style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border-color:#fcd34d">
+        <div class="value" style="color:#92400e">{{ coverage.partial }}</div>
+        <div class="label">Partial</div>
+    </div>
+    <div class="card negative">
+        <div class="value">{{ coverage.todo }}</div>
+        <div class="label">TODO</div>
+    </div>
+</div>
+
+<!-- Annotated Source/Target Panels -->
+<h2>Source / Target Code Comparison</h2>
+{% for panel in annotated_panels %}
+<details class="collapsible">
+    <summary>
+        <span class="badge
+            {% if panel.status == 'COMPLETE' %}badge-reported
+            {% elif panel.status == 'PARTIAL' %}badge-executing
+            {% else %}badge-planned{% endif %}">{{ panel.status }}</span>
+        {{ panel.source_construct }} &rarr; {{ panel.target_construct }}
+        <span style="color:#94a3b8;font-weight:normal;margin-left:0.5rem">({{ panel.mapping_type }})</span>
+    </summary>
+    <div class="content">
+        <div class="annotation-banner">
+            {{ panel.description }}
+        </div>
+        <div class="migration-panel">
+            <div class="panel-source">
+                <div class="panel-header">{{ panel.source_language }}: {{ panel.source_file }}{% if panel.has_line_ranges %} (excerpt){% endif %}</div>
+                <pre><code>{{ panel.source_code }}</code></pre>
+            </div>
+            <div class="panel-target">
+                <div class="panel-header">{{ panel.target_language }}: {{ panel.target_file }}{% if panel.has_line_ranges %} (excerpt){% endif %}</div>
+                <pre><code>{{ panel.target_code }}</code></pre>
+            </div>
+        </div>
+    </div>
+</details>
+{% endfor %}
+
+<!-- Metrics by Language -->
+<h2>Metrics by Language</h2>
+
+<h3>{{ overview.source_language }} (Source)</h3>
+<table>
+    <thead><tr><th>File</th><th class="num">LOC</th><th class="num">Code LOC</th><th class="num">CC Avg</th><th class="num">MI</th><th class="num">Functions</th></tr></thead>
+    <tbody>
+    {% for m in lang_metrics.source %}
+    <tr>
+        <td>{{ m.file_path }}</td>
+        <td class="num">{{ m.loc_total }}</td>
+        <td class="num">{{ m.loc_code }}</td>
+        <td class="num">{{ m.cc_avg }}</td>
+        <td class="num">{{ m.mi }}</td>
+        <td class="num">{{ m.functions }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<h3>{{ overview.target_language }} (Target)</h3>
+<table>
+    <thead><tr><th>File</th><th class="num">LOC</th><th class="num">Code LOC</th><th class="num">CC Avg</th><th class="num">MI</th><th class="num">Functions</th></tr></thead>
+    <tbody>
+    {% for m in lang_metrics.target %}
+    <tr>
+        <td>{{ m.file_path }}</td>
+        <td class="num">{{ m.loc_total }}</td>
+        <td class="num">{{ m.loc_code }}</td>
+        <td class="num">{{ m.cc_avg }}</td>
+        <td class="num">{{ m.mi }}</td>
+        <td class="num">{{ m.functions }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<!-- Token & Time -->
+<h2>Token &amp; Time</h2>
+<table>
+    <tr><th>Metric</th><th class="num">Value</th></tr>
+    <tr><td>Input Tokens</td><td class="num">{{ "{:,}".format(record.token_usage.input_tokens) }}</td></tr>
+    <tr><td>Output Tokens</td><td class="num">{{ "{:,}".format(record.token_usage.output_tokens) }}</td></tr>
+    <tr><td>Total Tokens</td><td class="num">{{ "{:,}".format(record.token_usage.total_tokens) }}</td></tr>
+    <tr><td>Model</td><td class="num">{{ record.token_usage.model }}</td></tr>
+    <tr><td>Cost Estimate (USD)</td><td class="num">${{ "%.4f"|format(record.token_usage.cost_estimate_usd) }}</td></tr>
+    <tr><td>Duration</td><td class="num">{{ "%.1f"|format(record.time_record.duration_seconds) }}s</td></tr>
+</table>
+
+<!-- Plan Details -->
+<details class="collapsible">
+    <summary>Plan Details</summary>
+    <div class="content">
+        <p><strong>Description:</strong> {{ record.plan.description }}</p>
+        <p><strong>Source Repo:</strong> {{ record.plan.migration.source_repo }}</p>
+        {% if record.plan.source_files %}
+        <p><strong>Source Files:</strong></p>
+        <ul>{% for f in record.plan.source_files %}<li>{{ f }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if record.plan.target_files %}
+        <p><strong>Target Files:</strong></p>
+        <ul>{% for f in record.plan.target_files %}<li>{{ f }}</li>{% endfor %}</ul>
+        {% endif %}
+    </div>
+</details>
+{% endblock %}

@@ -1,0 +1,162 @@
+{% extends "_base.html" %}
+
+{% block title %}Methodology: {{ record.increment_id }}{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>Methodology Document: {{ record.increment_id }}</h1>
+    <p class="subtitle">{{ record.plan.description }}</p>
+    <span class="badge badge-methodology">METHODOLOGY</span>
+    <span class="subtitle" style="margin-left:1rem">{{ methodology.generated_at[:19] }}</span>
+</div>
+
+<!-- Spec vs Actual Summary -->
+<h2>Spec vs Actual</h2>
+<div class="cards">
+    <div class="card">
+        <div class="value">{{ total_decisions }}</div>
+        <div class="label">Module Decisions</div>
+    </div>
+    <div class="card positive">
+        <div class="value">{{ matches }}</div>
+        <div class="label">Matched Plan</div>
+    </div>
+    <div class="card {% if deviations > 0 %}negative{% endif %}">
+        <div class="value">{{ deviations }}</div>
+        <div class="label">Deviations</div>
+    </div>
+    <div class="card">
+        <div class="value">{{ metrics.coverage_pct }}%</div>
+        <div class="label">Coverage</div>
+    </div>
+</div>
+
+<!-- Spec vs Actual Table -->
+<h2>Module-by-Module: Planned vs Actual</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Source Construct</th>
+            <th>Planned Approach</th>
+            <th>Actual Target</th>
+            <th>Status</th>
+            <th>Match</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for s in spec_vs_actual %}
+        <tr>
+            <td><strong>{{ s.source_file }}</strong><br><code>{{ s.source_construct }}</code></td>
+            <td>{{ s.planned_approach }}</td>
+            <td>{{ s.actual_target }}</td>
+            <td>
+                <span class="badge
+                    {% if s.actual_status == 'COMPLETE' %}badge-reported
+                    {% elif s.actual_status == 'PARTIAL' %}badge-executing
+                    {% else %}badge-planned{% endif %}">{{ s.actual_status }}</span>
+            </td>
+            <td>
+                {% if not s.deviated %}
+                    <span style="color:#16a34a;font-weight:700">Match</span>
+                {% else %}
+                    <span style="color:#dc2626;font-weight:700">Deviated</span>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<!-- Data Model Comparison -->
+<h2>Data Model Comparison</h2>
+{% for dm in data_models %}
+<details class="collapsible">
+    <summary>{{ dm.entity_name }}</summary>
+    <div class="content">
+        <div class="migration-panel">
+            <div class="panel-source">
+                <div class="panel-header">Source Schema</div>
+                <pre>{% for k, v in dm.source_schema.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre>
+            </div>
+            <div class="panel-target">
+                <div class="panel-header">Target Schema</div>
+                <pre>{% for k, v in dm.target_schema.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre>
+            </div>
+        </div>
+        {% if dm.planned_changes %}
+        <p style="margin-top:0.75rem"><strong>Changes:</strong>
+            {% for c in dm.planned_changes %}{{ c }}{% if not loop.last %}; {% endif %}{% endfor %}
+        </p>
+        {% endif %}
+        {% if dm.grain_change %}
+        <p><strong>Grain change:</strong> {{ dm.grain_change }}</p>
+        {% endif %}
+    </div>
+</details>
+{% endfor %}
+
+<!-- Decision Log -->
+<h2>Decision Log</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Decision</th>
+            <th>Chosen Option</th>
+            <th>Rationale</th>
+            <th>Actual Outcome</th>
+            <th>Match</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for d in decision_log %}
+        <tr>
+            <td>{{ d.decision }}</td>
+            <td>{{ d.chosen_option }}</td>
+            <td>{{ d.planned_rationale }}</td>
+            <td>{{ d.actual_outcome }}</td>
+            <td>
+                {% if d.match %}
+                    <span style="color:#16a34a">Yes</span>
+                {% else %}
+                    <span style="color:#dc2626">No</span>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<!-- Metrics Summary -->
+<h2>Metrics Summary</h2>
+<div class="cards">
+    <div class="card {% if metrics.loc_delta < 0 %}positive{% elif metrics.loc_delta > 0 %}negative{% endif %}">
+        <div class="value">{{ metrics.loc_before }} &rarr; {{ metrics.loc_after }}</div>
+        <div class="label">LOC ({{ "%+d"|format(metrics.loc_delta) }})</div>
+    </div>
+    <div class="card">
+        <div class="value">{{ "{:,}".format(metrics.tokens_used) }}</div>
+        <div class="label">Tokens Used</div>
+    </div>
+    <div class="card">
+        <div class="value">${{ "%.4f"|format(metrics.cost_usd) }}</div>
+        <div class="label">Cost</div>
+    </div>
+    <div class="card">
+        <div class="value">{{ metrics.constructs_complete }}/{{ metrics.constructs_total }}</div>
+        <div class="label">Constructs Complete</div>
+    </div>
+</div>
+
+<!-- Acceptance Criteria -->
+{% if record.plan.acceptance_criteria %}
+<h2>Acceptance Criteria</h2>
+<ul>
+{% for c in record.plan.acceptance_criteria %}
+    <li>{{ c }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+
+{% endblock %}
