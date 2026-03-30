@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -44,8 +45,7 @@ def run_tests(
     start = time.monotonic()
     try:
         proc = subprocess.run(
-            cmd,
-            shell=True,
+            shlex.split(cmd),
             cwd=cwd,
             capture_output=True,
             text=True,

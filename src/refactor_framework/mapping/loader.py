@@ -77,6 +77,19 @@ def validate_mappings(
         if m.mapping_type != "new" and not m.source_file:
             warnings.append(f"Mapping {i}: non-new mapping missing source_file")
 
+    # Check for duplicate source constructs within the same source file
+    seen: dict[tuple[str, str], int] = {}
+    for i, m in enumerate(mappings):
+        key = (m.source_file, m.source_construct)
+        if key in seen and m.source_file and m.source_construct:
+            warnings.append(
+                f"Mapping {i}: duplicate source_construct "
+                f"'{m.source_construct}' in '{m.source_file}' "
+                f"(first seen at mapping {seen[key]})"
+            )
+        else:
+            seen[key] = i
+
     return warnings
 
 

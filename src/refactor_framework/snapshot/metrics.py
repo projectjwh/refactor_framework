@@ -143,8 +143,7 @@ def _apply_basic_metrics(source: str, metrics: FileMetrics) -> None:
     comment_markers = ("#", "//", "*", "/*", "--", ";")
     metrics.loc_comment = sum(
         1 for line in lines
-        if line.strip() and line.strip()[0:2] in comment_markers
-        or line.strip().startswith(comment_markers)
+        if line.strip() and line.strip().startswith(comment_markers)
     )
     metrics.loc_code = metrics.loc_total - metrics.loc_blank - metrics.loc_comment
 

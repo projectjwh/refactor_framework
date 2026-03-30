@@ -35,9 +35,9 @@ def generate_spec(config: AppConfig, increment_id: str) -> ArchitectureSpec:
 
     intake = load_intake(find_project_root() / "intake.yaml")
 
-    # Build module decisions from construct mappings
+    # Build module decisions from construct mappings (skip if none)
     module_decisions = []
-    for m in plan.construct_mappings:
+    for m in plan.construct_mappings if plan.construct_mappings else []:
         decision = ModuleDecision(
             source_construct=m.source_construct,
             source_file=m.source_file,

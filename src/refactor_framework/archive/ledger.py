@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -12,6 +13,34 @@ from refactor_framework.models import IncrementRecord
 from refactor_framework.utils.paths import ensure_dir
 
 logger = logging.getLogger("refactor_framework.archive")
+
+
+class _FileLock:
+    """Simple cross-platform file lock using a .lock file with retry."""
+
+    def __init__(self, lock_path: Path, timeout: float = 5.0):
+        self._lock_path = lock_path
+        self._timeout = timeout
+
+    def __enter__(self):
+        deadline = time.monotonic() + self._timeout
+        while True:
+            try:
+                self._lock_path.open("x").close()
+                return self
+            except FileExistsError:
+                if time.monotonic() > deadline:
+                    # Stale lock — force remove and retry once
+                    self._lock_path.unlink(missing_ok=True)
+                    try:
+                        self._lock_path.open("x").close()
+                        return self
+                    except FileExistsError:
+                        raise TimeoutError(f"Ledger lock timeout: {self._lock_path}")
+                time.sleep(0.05)
+
+    def __exit__(self, *args):
+        self._lock_path.unlink(missing_ok=True)
 
 
 class Ledger:
@@ -57,16 +86,22 @@ class Ledger:
         if not self._path.exists():
             return []
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            with self._lock_file("r"):
+                data = json.loads(self._path.read_text(encoding="utf-8"))
             return data if isinstance(data, list) else []
         except (json.JSONDecodeError, ValueError):
             return []
 
     def _json_save(self, records: list[dict]) -> None:
-        self._path.write_text(
-            json.dumps(records, indent=2, default=str),
-            encoding="utf-8",
-        )
+        with self._lock_file("w"):
+            self._path.write_text(
+                json.dumps(records, indent=2, default=str),
+                encoding="utf-8",
+            )
+
+    def _lock_file(self, mode: str):
+        """Context manager providing cross-platform file locking via .lock file."""
+        return _FileLock(self._path.with_suffix(".lock"))
 
     def _json_upsert(self, record: IncrementRecord) -> None:
         records = self._json_load()
@@ -138,12 +173,20 @@ class Ledger:
 def _dict_to_record(d: dict) -> IncrementRecord:
     """Reconstruct an IncrementRecord from a dict."""
     from refactor_framework.models import (
+        ArchitectureSpec,
         ConstructMapping,
+        DataModelChange,
+        DesignAlternative,
         EfficiencyMetrics,
         FileMetrics,
         IncrementPlan,
         IncrementSnapshot,
+        MethodologyRecord,
         MigrationConfig,
+        ModuleDecision,
+        RiskItem,
+        ScalingConsideration,
+        SpecApproval,
         TestResult,
         TimeRecord,
         TokenUsage,
@@ -176,6 +219,45 @@ def _dict_to_record(d: dict) -> IncrementRecord:
             plan.migration = MigrationConfig(**migration_raw)
         return plan
 
+    def _build_spec(data: dict | None) -> ArchitectureSpec | None:
+        if data is None:
+            return None
+        modules = [
+            ModuleDecision(
+                **{k: v for k, v in md.items() if k != "alternatives"},
+                alternatives=[DesignAlternative(**a) for a in md.get("alternatives", [])],
+            )
+            for md in data.get("module_decisions", [])
+        ]
+        approval_raw = data.get("approval")
+        return ArchitectureSpec(
+            increment_id=data.get("increment_id", ""),
+            generated_at=data.get("generated_at", ""),
+            architecture_overview=data.get("architecture_overview", ""),
+            module_decisions=modules,
+            scaling_considerations=[
+                ScalingConsideration(**s) for s in data.get("scaling_considerations", [])
+            ],
+            data_model_changes=[
+                DataModelChange(**dm) for dm in data.get("data_model_changes", [])
+            ],
+            risks=[RiskItem(**r) for r in data.get("risks", [])],
+            acceptance_criteria=data.get("acceptance_criteria", []),
+            approval=SpecApproval(**approval_raw) if approval_raw else None,
+        )
+
+    def _build_methodology(data: dict | None) -> MethodologyRecord | None:
+        if data is None:
+            return None
+        return MethodologyRecord(
+            increment_id=data.get("increment_id", ""),
+            generated_at=data.get("generated_at", ""),
+            spec_vs_actual=data.get("spec_vs_actual", []),
+            data_model_comparison=data.get("data_model_comparison", []),
+            decision_log=data.get("decision_log", []),
+            metrics_summary=data.get("metrics_summary", {}),
+        )
+
     plan = _build_plan(dict(d.get("plan", {})))
 
     tu_data = d.get("token_usage", {})
@@ -199,4 +281,6 @@ def _dict_to_record(d: dict) -> IncrementRecord:
         test_after=_build_test(d.get("test_after")),
         efficiency=efficiency,
         diff_summary=d.get("diff_summary", {}),
+        spec=_build_spec(d.get("spec")),
+        methodology=_build_methodology(d.get("methodology")),
     )

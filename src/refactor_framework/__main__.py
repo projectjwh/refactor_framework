@@ -28,6 +28,22 @@ def _add_increment_id_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _check_increment_id(args) -> bool:
+    """Validate increment ID format. Returns True if valid, prints error if not."""
+    from refactor_framework.utils.ids import validate_increment_id
+
+    inc_id = getattr(args, "increment_id", None)
+    if inc_id and not validate_increment_id(inc_id):
+        print(
+            f"Error: invalid increment ID '{inc_id}'. "
+            f"Expected format: YYYYMMDDTHHMMSS (e.g., 20260326T143022).\n"
+            f"  Run 'status' to see valid increment IDs.",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="refactor_framework",
@@ -90,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     # -- scaffold --
     scaff_p = sub.add_parser("scaffold", help="Auto-generate mapping YAML from source files")
     scaff_p.add_argument("--source-dir", type=str, required=True, help="Source codebase")
-    scaff_p.add_argument("--patterns", nargs="+", default=["*.sas"], help="File patterns")
+    scaff_p.add_argument("--patterns", nargs="+", required=True, help="File patterns")
     scaff_p.add_argument("--output", type=str, required=True, help="Output YAML path")
     scaff_p.add_argument("--target-lang", type=str, default="Python", help="Target language")
     _add_config_arg(scaff_p)
@@ -148,8 +164,21 @@ def build_parser() -> argparse.ArgumentParser:
     report_p.add_argument("--all", action="store_true", help="Generate aggregate dashboard")
     _add_config_arg(report_p)
 
+    # -- reset --
+    reset_p = sub.add_parser("reset", help="Reset increment to earlier status")
+    _add_increment_id_arg(reset_p)
+    reset_p.add_argument(
+        "--to-status", type=str, default="planned",
+        choices=["planned", "spec_generated", "spec_approved"],
+        help="Status to reset to",
+    )
+    _add_config_arg(reset_p)
+
     # -- status --
     status_p = sub.add_parser("status", help="Show all increments status")
+    status_p.add_argument(
+        "--format", type=str, default="table", choices=["table", "json"],
+    )
     _add_config_arg(status_p)
 
     # -- history --
@@ -174,13 +203,21 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging()
     config = load_config(args.config)
 
+    # Validate increment-id if present, enable per-increment logging
+    if hasattr(args, "increment_id") and args.increment_id:
+        if not _check_increment_id(args):
+            return 1
+        from refactor_framework.utils.logging import setup_increment_logging
+
+        setup_increment_logging(args.increment_id, config.project.increments_dir)
+
     dispatch = {
         "init": _cmd_init, "intake": _cmd_intake,
         "plan": _cmd_plan, "map": _cmd_map,
         "spec": _cmd_spec, "approve": _cmd_approve,
         "snapshot": _cmd_snapshot, "execute": _cmd_execute, "test": _cmd_test,
         "report": _cmd_report, "methodology": _cmd_methodology,
-        "status": _cmd_status, "history": _cmd_history,
+        "reset": _cmd_reset, "status": _cmd_status, "history": _cmd_history,
         "scaffold": _cmd_scaffold, "validate": _cmd_validate, "next": _cmd_next,
         "coverage": _cmd_coverage, "burndown": _cmd_burndown,
     }
@@ -459,7 +496,11 @@ def _cmd_report(config, args) -> int:
 
     record = ledger.get(args.increment_id)
     if not record:
-        print(f"Error: increment {args.increment_id} not found in ledger", file=sys.stderr)
+        print(
+            f"Error: increment {args.increment_id} not found in ledger.\n"
+            f"  Run 'status' to see valid IDs.",
+            file=sys.stderr,
+        )
         return 1
 
     inc_dir = Path(config.project.increments_dir) / args.increment_id
@@ -492,9 +533,6 @@ def _cmd_report(config, args) -> int:
 
 
 def _cmd_status(config, args) -> int:
-    from rich.console import Console
-    from rich.table import Table
-
     from refactor_framework.archive.ledger import Ledger
 
     ledger = Ledger(config.archive.ledger_path, config.archive.ledger_backend)
@@ -503,6 +541,26 @@ def _cmd_status(config, args) -> int:
     if not records:
         print("No increments found.")
         return 0
+
+    if getattr(args, "format", "table") == "json":
+        data = [
+            {
+                "increment_id": r.increment_id,
+                "status": r.status,
+                "description": r.plan.description,
+                "files": len(r.plan.target_files),
+                "loc_delta": r.efficiency.loc_delta,
+                "cc_delta": r.efficiency.complexity_delta,
+                "tokens": r.token_usage.total_tokens,
+                "cost": r.token_usage.cost_estimate_usd,
+            }
+            for r in records
+        ]
+        print(json.dumps(data, indent=2))
+        return 0
+
+    from rich.console import Console
+    from rich.table import Table
 
     table = Table(title="Refactoring Increments")
     table.add_column("ID", style="cyan")
@@ -593,6 +651,59 @@ def _cmd_history(config, args) -> int:
     return 0
 
 
+def _cmd_reset(config, args) -> int:
+    import shutil
+
+    from refactor_framework.archive.ledger import Ledger
+
+    ledger = Ledger(config.archive.ledger_path, config.archive.ledger_backend)
+    record = ledger.get(args.increment_id)
+    if not record:
+        print(
+            f"Error: increment {args.increment_id} not found.\n"
+            f"  Run 'status' to see valid IDs.",
+            file=sys.stderr,
+        )
+        return 1
+
+    inc_dir = Path(config.project.increments_dir) / args.increment_id
+    target = args.to_status
+
+    # Clean artifacts that belong to later phases
+    artifacts_to_clean = {
+        "planned": ["spec.md", "spec.json", "before", "after",
+                     "before_metrics.json", "after_metrics.json",
+                     "execution_start.json", "execution_end.json",
+                     "report.html", "methodology.html"],
+        "spec_generated": ["before", "after", "before_metrics.json",
+                           "after_metrics.json", "execution_start.json",
+                           "execution_end.json", "report.html",
+                           "methodology.html"],
+        "spec_approved": ["before", "after", "before_metrics.json",
+                          "after_metrics.json", "execution_start.json",
+                          "execution_end.json", "report.html",
+                          "methodology.html"],
+    }
+
+    for artifact in artifacts_to_clean.get(target, []):
+        p = inc_dir / artifact
+        if p.is_dir():
+            shutil.rmtree(p)
+        elif p.exists():
+            p.unlink()
+
+    record.status = target
+    if target == "planned":
+        record.spec = None
+        record.before = None
+        record.after = None
+        record.methodology = None
+    ledger.append(record)
+
+    print(f"Increment {args.increment_id} reset to '{target}'")
+    return 0
+
+
 def _cmd_spec(config, args) -> int:
     from refactor_framework.archive.ledger import Ledger
     from refactor_framework.spec.generator import generate_spec, save_spec
@@ -650,12 +761,20 @@ def _cmd_methodology(config, args) -> int:
     ledger = Ledger(config.archive.ledger_path, config.archive.ledger_backend)
     record = ledger.get(args.increment_id)
     if not record:
-        print(f"Error: increment {args.increment_id} not found", file=sys.stderr)
+        print(
+            f"Error: increment {args.increment_id} not found.\n"
+            f"  Run 'status' to see valid IDs.",
+            file=sys.stderr,
+        )
         return 1
 
     spec = load_spec_json(config, args.increment_id)
     if not spec:
-        print(f"Error: no spec found for {args.increment_id}", file=sys.stderr)
+        print(
+            f"Error: no spec found for {args.increment_id}.\n"
+            f"  Run: spec --increment-id {args.increment_id}",
+            file=sys.stderr,
+        )
         return 1
 
     methodology = generate_methodology(record, spec)
