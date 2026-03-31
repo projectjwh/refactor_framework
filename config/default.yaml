@@ -1,6 +1,6 @@
 project:
-  name: test
-  target_repo: C:\Users\jwhyu\Desktop\claude_projects\refactor_framework\legacy_sas_codebase\programs
+  name: ""
+  target_repo: "."
   output_dir: output
   increments_dir: increments
   devlogs_dir: devlogs

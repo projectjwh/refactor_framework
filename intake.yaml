@@ -1,0 +1,46 @@
+intake_version: '1.0'
+completed_at: '2026-03-30T00:00:00+00:00'
+goals:
+  motivation: modernization
+  motivation_detail: ''
+  timeline: 1 month
+  budget_usd: 100.0
+  team_size: solo
+  target_environment: local
+  success_definition: All outputs match original, all tests pass, LOC reduced
+codebase:
+  source_language: SAS
+  estimated_loc: 20000
+  source_expertise: proficient
+  target_expertise: expert
+  pain_points:
+    - nested macros
+    - no tests
+    - hard-coded paths
+    - brute-force IF/ELSE
+    - SYSTASK parallelism
+  critical_modules:
+    - 02_enroll_process.sas
+    - 01_enroll_driver.sas
+  test_coverage: none
+  data_sensitivity: regulated_phi
+technical:
+  target_language: Python
+  key_libraries:
+    - polars
+    - pytest
+    - multiprocessing
+  conventions: pep8_ruff
+  output_format: parquet
+  parallelism: multiprocessing
+  prefer_idiomatic: true
+  preserve_comments: false
+risk_qa:
+  equivalence_rigor: strict_row_match
+  review_frequency: every_increment
+  rollback_strategy: keep_source_parallel
+  max_risk_severity: medium
+  approval_chain:
+    - tech_lead
+    - data_architect
+  ci_integration: false
