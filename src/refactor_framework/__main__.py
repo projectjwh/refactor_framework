@@ -186,6 +186,22 @@ def build_parser() -> argparse.ArgumentParser:
     history_p.add_argument("--format", type=str, default="table", choices=["table", "json"])
     _add_config_arg(history_p)
 
+    # -- pipeline --
+    pipe_p = sub.add_parser("pipeline", help="Run full pipeline end-to-end")
+    pipe_p.add_argument("--source-repo", type=str, required=True)
+    pipe_p.add_argument("--target-repo", type=str, required=True)
+    pipe_p.add_argument("--source-files", nargs="+", required=True)
+    pipe_p.add_argument("--target-files", nargs="+", required=True)
+    pipe_p.add_argument("--intake", type=str, required=True, help="Path to intake.yaml")
+    pipe_p.add_argument("--mappings", type=str, default=None, help="Mappings YAML (manual)")
+    pipe_p.add_argument("--description", type=str, required=True)
+    pipe_p.add_argument(
+        "--mode", type=str, default="manual", choices=["manual", "auto"],
+    )
+    pipe_p.add_argument("--model", type=str, default="claude-sonnet-4-20250514")
+    pipe_p.add_argument("--api-key", type=str, default=None)
+    _add_config_arg(pipe_p)
+
     return parser
 
 
@@ -220,6 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         "reset": _cmd_reset, "status": _cmd_status, "history": _cmd_history,
         "scaffold": _cmd_scaffold, "validate": _cmd_validate, "next": _cmd_next,
         "coverage": _cmd_coverage, "burndown": _cmd_burndown,
+        "pipeline": _cmd_pipeline,
     }
     handler = dispatch.get(args.command)
     if handler:
@@ -787,6 +804,29 @@ def _cmd_methodology(config, args) -> int:
     ledger.append(record)
 
     print(f"Methodology document written: {output}")
+    return 0
+
+
+def _cmd_pipeline(config, args) -> int:
+    from refactor_framework.pipeline.orchestrator import run_pipeline
+
+    result = run_pipeline(
+        config=config,
+        source_repo=args.source_repo,
+        target_repo=args.target_repo,
+        source_patterns=args.source_files,
+        target_patterns=args.target_files,
+        description=args.description,
+        intake_path=Path(args.intake),
+        mappings_path=Path(args.mappings) if args.mappings else None,
+        mode=args.mode,
+        api_key=args.api_key,
+        model=args.model,
+    )
+
+    if result["status"] != "COMPLETE":
+        print(f"Pipeline {result['status']}: {result.get('reason', '')}", file=sys.stderr)
+        return 1
     return 0
 
 
